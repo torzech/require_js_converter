@@ -6,27 +6,22 @@ function sort_by_length($a,$b){
 }
 
 function do_your_magic($data) {
-	$start = mb_strpos($data, 'draw2d.');
-	$end = mb_strpos($data, '{', $start);
-
 	preg_match('/(?P<className>draw2d\..*)[ ]?= /', $data, $matches);
 
-
 	if (!empty($matches)) {
-		$className = $matches['className'];
+		$className = trim($matches['className']);
 		$classDefinition = $matches[0];
 
-		$pattern = '
-			define("%s",
-			[
-				%s
-			],
-			function(
-				%s
-			){
-				return
-		';
-
+		$pattern = <<<EOF
+define("%s",
+    [
+%s
+    ],
+function(
+%s
+){
+    return
+EOF;
 		$req = [];
 		$req2 = [];
 
@@ -36,6 +31,12 @@ function do_your_magic($data) {
 
 		array_unique($matches);
 		foreach($matches[0] as $name) {
+			if (strpos($name, 'extend')) {
+				$name = explode('.', $name);
+				array_pop($name);
+				$name = implode('.', $name);
+			}
+
 			if ($name !== $className && !in_array($name, $names)) {
 				$names[] = $name;
 			}
@@ -44,10 +45,8 @@ function do_your_magic($data) {
 		usort($names, 'sort_by_length');
 
 		foreach($names as $name) {
-			$req[] = sprintf('"%s"', str_replace('.', '/', $name));
-			$req2[] = sprintf('%s', str_replace('.', '_', $name));
-
-			$data = str_replace($name, str_replace('.', '_', $name), $data);
+			$req[] = sprintf('        "%s"', str_replace('.', '/', $name));
+			$req2[] = sprintf('    %s', str_replace('.', '_', $name));
 		}
 
 		asort($req);
@@ -62,9 +61,18 @@ function do_your_magic($data) {
 			$req,
 			$req2
 		);
-		$data = str_replace($classDefinition, $pattern, $data) . "\n});";
+		$data = str_replace($classDefinition, $pattern . " ", $data);
 
-		return $data;
+		foreach($names as $name) {
+			$data = str_replace($name, str_replace('.', '_', $name), $data);
+		}
+
+		$data = str_replace($className, str_replace('.', '_', $className), $data);
+		$start = strpos($data, "return");
+		$header = substr($data, 0, $start);
+		$footer = trim(str_replace("\n", "\n    ", substr($data, $start)));
+
+		return $header . $footer . "\n});\n";
 	} else {
 		throw new Exception('Unknow header!');
 	}
@@ -105,10 +113,10 @@ function read_all_files($root = '.'){
 	return $files;
 }
 
+
 $dirsAndFiles = read_all_files($argv[1]);
 
 $i = 1;
-
 foreach($dirsAndFiles['files'] as $file) {
 	printf("%d: %s\n", $i++, $file);
 
